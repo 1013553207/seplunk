@@ -2,6 +2,10 @@
 import os
 import sqlite3
 
+from core.logger import get_log
+
+SHOW_SQL = True
+
 LOGGER = get_log(__file__)
 
 

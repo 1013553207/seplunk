@@ -5,6 +5,9 @@ import os
 import sys
 import getopt
 
+from core.core_process import process
+
+DEBUG = True
 
 def set_daemon():
 	# do the UNIX double-fork magic, see Stevens' "Advanced
@@ -44,9 +47,12 @@ def main():
 	'''
 	try:
 		opts, args = getopt.getopt(sys.argv[1:], shortargs)
-	except getopt.GetoptError, err:
+		if len(sys.argv) < 2:
+			raise Exception("args not found")
+	except :
 		print useage
 		sys.exit(2)
+  
 
 	config_path = None
 	for o, a in opts:
@@ -58,7 +64,8 @@ def main():
 		else:
 			print useage
 			sys.exit(1)
-	set_daemon()
+	if not DEBUG:
+	    set_daemon()
 	process(config_path)
 
 if __name__ == '__main__':
