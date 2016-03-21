@@ -14,6 +14,7 @@ from core.logger import get_log
 from core.configure import get_configure
 from core.configure import get_extension
 from core.configure import get_property
+from seplunk import DEBUG
 
 LOGGER = get_log(__file__)
 
@@ -39,13 +40,19 @@ def save_user(conn, username, forbid=0):
     if not CREATE_USER:
         sql.create_table(conn, create_sql)
         CREATE_USER = True
-    insert_sql = "INSERT INTO '%s'('%s', '%s') values(%s, %s)" % (USER_TABLE, 'username', 'forbid', username, forbid)
-    LOGGER.info(insert_sql)
-    sql.execute(conn, insert_sql)
+    select_sql = "SELECT * FROM '%s' WHERE '%s'= '%s' " % (USER_TABLE, "username", username)
+    LOGGER.info(select_sql)
+    result = sql.fetchone(conn, select_sql)
+    if result:
+        update_sql = "UPDATE '%s' SET 'forbid' = '%s' WHERE 'username'= '%s'"  % (USER_TABLE, forbid, username)
+        sql.execute(conn, update_sql)
+    else:
+        insert_sql = "INSERT INTO '%s'('%s', '%s') values(%s, %s)" % (USER_TABLE, 'username', 'forbid', username, forbid)
+        LOGGER.info(insert_sql)
+        sql.execute(conn, insert_sql)
 
 
-
-def save_job_summary(hdfs_client, conn, log_fullpath, f):
+def save_job_summary_file(hdfs_client, conn, log_fullpath, f):
     global CREATE_JOB_SUMMARY, USER_TABLE
     jobid = f[:len(f)-8]
     summary_file = os.path.join(log_fullpath, f)
@@ -69,19 +76,36 @@ def save_job_summary(hdfs_client, conn, log_fullpath, f):
         LOGGER.info("SQL:" + create_sql)
         sql.create_table(conn, create_sql)
         CREATE_JOB_SUMMARY = True
+
+    select_sql = "SELECT * FROM '%s' WHERE 'QjobId' = '%s'" % (sql_table, jobid)
+    LOGGER.info(select_sql)
+    result = sql.fetchone(conn, select_sql)
+    if result:
+        update = ", ".join([ "'%s'='%s'" % (key, job_info[key]) for key in job_info.keys() if key != 'QjobId'])
+        update_sql = "UPDATE '%s' SET %s WHERE 'QjobId' = '%s' " % (sql_table, update, jobid)
+        LOGGER.info(update_sql)
+        sql.execute(conn, update_sql)
+    else:
+        keys, values = "", ""
+        items = job_info.items()
+        keys = ", ".join(map(lambda item: "'%s'" % item[0], items))
+        values = ", ".join(map(lambda item: "'%s'" % item[1], items))
+        sql_insert =  ("INSERT INTO %s(%s) VALUES (%s)") % (sql_table, keys, values)
+        LOGGER.info(sql_insert)
+        sql.execute(conn, sql_insert)
+
+
+def save_job_summary(conn, job_info):
     keys, values = "", ""
     items = job_info.items()
     keys = ", ".join(map(lambda item: "'%s'" % item[0], items))
     values = ", ".join(map(lambda item: "'%s'" % item[1], items))
-    #for key, value in job_info.items():
-    #    keys += ("'%s',") %  key
-    #    values += ("'%s',") % value
-
     sql_insert =  ("INSERT INTO %s(%s) VALUES (%s)") % (sql_table, keys, values)
     LOGGER.info(sql_insert)
     sql.execute(conn, sql_insert)
 
-def save_job_conf(hdfs_client, conn, log_fullpath, f):
+
+def save_job_conf_file(hdfs_client, conn, log_fullpath, f):
     global CREATE_JOB_CONF
     jobid = f[:len(f)-9]
     conf_file = os.path.join(log_fullpath, f)
@@ -96,15 +120,25 @@ def save_job_conf(hdfs_client, conn, log_fullpath, f):
         LOGGER.info(create_sql)
         sql.create_table(conn, create_sql)
         CREATE_JOB_CONF = True
-    keys, values = "", ""
-    items = propertys.items()
-    keys = ", ".join(map(lambda item: "'%s'" % item[0], items))
-    values = ", ".join(map(lambda item: "'%s'" % item[1], items))
-    sql_insert =  ("INSERT INTO %s(%s) VALUES (%s)") % (sql_table, keys, values)
-    LOGGER.info(sql_insert)
-    sql.execute(conn, sql_insert)
+    select_sql = "SELECT * FROM '%s' WHERE 'QjobId' = '%s'" % (sql_table, jobid)
+    LOGGER.info(select_sql)
+    result = sql.fetchone(conn, select_sql)
+    if result:
+        update = ", ".join([ "'%s'='%s'" % (key, propertys[key]) for key in propertys.keys() if key != 'QjobId'])
+        update_sql = "UPDATE '%s' SET %s WHERE 'QjobId' = '%s' " % (sql_table, update, jobid)
+        LOGGER.info(update_sql)
+        sql.execute(conn, update_sql)
+    else:
+        keys, values = "", ""
+        items = propertys.items()
+        keys = ", ".join(map(lambda item: "'%s'" % item[0], items))
+        values = ", ".join(map(lambda item: "'%s'" % item[1], items))
+        sql_insert =  ("INSERT INTO %s(%s) VALUES (%s)") % (sql_table, keys, values)
+        LOGGER.info(sql_insert)
+        sql.execute(conn, sql_insert)
 
-
+def save_job_conf():
+    pass
 
 def process_log(hdfs_client, config, conn):
     '''process log and save useful information in dbbase'''
@@ -144,14 +178,18 @@ def monitor(hdfs_client, config, conn):
                 fullpath = os.path.join(running_job_path, f)
                 if extension == ".jar":
                     hdfs_client.copy_to_local(fullpath, TMP_PATH)
-                    jar_checksum, job_conf = process_jar(os.path.join(TMP_PATH, f)
-                    save_job_summary(hdfs_client, conn)
+                    job_info = {}
+                    jar_checksum,  job_conf = process_jar(os.path.join(TMP_PATH, f)
+                    job_info['jar_checksum'] = jar_checksum
+                    job_info['QjobId'] = jobid
+                    job_info['job_runing'] = 1
+                    job_info['user'] = user
+                    save_job_summary(conn, job_info)
                 elif extension == ".xml":
                     if f == "job.xml":
                         pass
                     elif jobid in f:
-                        pass
-
+                        save_job_conf_file(hdfs_client, conn, fullpath, f)
 
 
 def process(config_path):
@@ -171,8 +209,8 @@ def process(config_path):
         os.remove(db_path)
     conn = sql.get_conn(db_path)
     process_log(hdfs_client, config, conn)
-    while True:
+    if DEBUG:
+        monitor(hdfs_client, config, conn)
+    while False if DEBUG else True :
         monitor(hdfs_client, config, conn)
         time.sleep(50)
-
-

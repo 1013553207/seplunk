@@ -61,9 +61,7 @@ def create_table(conn, sql):
     else:
         LOGGER.error('the [{}] is empty or equal None!'.format(sql))
 
-###############################################################
-####            创建|删除表操作     END
-###############################################################
+
 
 def close_all(conn, cu):
     '''关闭数据库游标对象和数据库连接对象'''
@@ -73,10 +71,6 @@ def close_all(conn, cu):
     finally:
         if cu is not None:
             cu.close()
-
-###############################################################
-####            数据库操作CRUD     START
-###############################################################
 
 def save(conn, sql, data):
     '''插入数据'''
@@ -111,43 +105,30 @@ def fetchall(conn, sql):
         cu.execute(sql)
         r = cu.fetchall()
         if len(r) > 0:
-            for e in range(len(r)):
-                LOGGER.info(r[e])
+            return r
+        else:
+            LOGGER.info('the result equal None!')
     else:
         LOGGER.error('the [{}] is empty or equal None!'.format(sql))
+    return None
 
-def fetchone(conn, sql, data):
+def fetchone(conn, sql):
     '''查询一条数据'''
     if sql is not None and sql != '':
-        if data is not None:
-            #Do this instead
-            d = (data,)
-            cu = get_cursor(conn)
-            if SHOW_SQL:
-                LOGGER.info('执行sql:[{}],参数:[{}]'.format(sql, data))
-            cu.execute(sql, d)
-            r = cu.fetchall()
-            if len(r) > 0:
-                for e in range(len(r)):
-                    LOGGER.info(r[e])
+        cu = get_cursor(conn)
+        if SHOW_SQL:
+            LOGGER.info('执行sql:[{}]'.format(sql))
+        cu.execute(sql)
+        r = cu.fetchone()
+        if len(r) > 0:
+            return r
         else:
-            LOGGER.info('the [{}] equal None!'.format(data))
+            LOGGER.info('the result equal None!')
     else:
         LOGGER.error('the [{}] is empty or equal None!'.format(sql))
+    return None
 
-def update(conn, sql, data):
-    '''更新数据'''
-    if sql is not None and sql != '':
-        if data is not None:
-            cu = get_cursor(conn)
-            for d in data:
-                if SHOW_SQL:
-                    LOGGER.info('执行sql:[{}],参数:[{}]'.format(sql, d))
-                cu.execute(sql, d)
-                conn.commit()
-            close_all(conn, cu)
-    else:
-        LOGGER.error('the [{}] is empty or equal None!'.format(sql))
+
 
 def update(conn, sql, data):
     '''更新数据'''
