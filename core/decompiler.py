@@ -21,28 +21,35 @@ LOGER = get_log(__file__)
 
 
 def process_jar(jar_file):
+    md5 = get_md5(jar_file)
 	if not os.path.exists(jar_file):
 		LOGER.error("source file not exits")
-		return
+		return md5, None
 	tmp = os.path.join(os.getcwd(), "java_decompiler"+str(uuid.uuid1()))
 	os.mkdir(tmp)
 	cmdline = "%s %s -jar %s -o %s >/dev/null 2>&- 1>&-" % (JAVA, DECOMPILER, jar_file, tmp)
 	LOGER.info("exec:" + cmdline)
-	if os.system(cmdline):
-		LOGER.error("error" + cmdline)
-		return
 	configure  = {}
-	for parent,dirname,files in os.walk(tmp):
-		for f in files:
-			fullpath = os.path.join(parent,f)
-			LOGER.info("extension:" + fullpath)
-			if get_extension(fullpath) == ".java":
-				result = process_java_source(fullpath)
-				if result:
-					LOGER.info("add:"+str(result))
-					configure.update(result)
-	shutil.rmtree(tmp)
-	return get_md5(jar_file), configure
+    try:
+        if os.system(cmdline):
+	    	LOGER.error("error" + cmdline)
+	    	return md5, None
+	    for parent,dirname,files in os.walk(tmp):
+	    	for f in files:
+	    		fullpath = os.path.join(parent,f)
+	    		LOGER.info("extension:" + fullpath)
+	    		if get_extension(fullpath) == ".java":
+	    			result = process_java_source(fullpath)
+	    			if result:
+	    				LOGER.info("add:"+str(result))
+	    				configure.update(result)
+                    else:
+                        return md5, None
+    except Exception e:
+        LOGER.error(str(e))
+    finally:
+	    shutil.rmtree(tmp)
+	return md5, configure
 
 
 def process_java_source(java_file):

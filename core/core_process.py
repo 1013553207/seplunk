@@ -10,7 +10,7 @@ from xml.etree import ElementTree as ET
 import pyhdfs
 
 from core import sql
-from decompiler import process_jar 
+from decompiler import process_jar
 from core.logger import get_log
 from core.configure import get_configure
 from core.configure import get_extension
@@ -27,14 +27,16 @@ CREATE_JOB_CONF = False
 
 STAGE = ".staging"
 USER_TABLE = 'user'
+HEALTH_POINT = 8
 STATUS_RUNNING = "RUNNING"
 
 def save_user(conn, username, forbid=0):
     global CREATE_USER, USER_TABLE
     create_sql = ''' CREATE TABLE '%s'(
-                'uid' integer primary key AUTOINCREMENT,
-                'username' varchar(255) NOT NULL UNIQUE,
-                'forbid' tinyint(8) NOT NULL DEFAULT 0)''' % USER_TABLE
+                'uid' INTEGER PRIMARY KEY AUTOINCREMENT,
+                'username' VARCHAR(255) NOT NULL UNIQUE,
+                'forbid' TINYINT(8) NOT NULL DEFAULT 0,
+                'health_point' INTEGER NOT NULL DEFAULT %d)''' % (USER_TABLE, HEALTH_POINT)
     if not CREATE_USER:
         sql.create_table(conn, create_sql)
         CREATE_USER = True
@@ -60,7 +62,7 @@ def save_job_summary_file(hdfs_client, conn, log_fullpath, f):
     job_info = dict((pair.split("=")) for pair in lines.split(","))
     job_info['job_id'] = jobid
     job_info['job_checksum'] = 0
-    job_info['status'] = STATUS_RUNNING 
+    job_info['status'] = STATUS_RUNNING
     job_info['failedMaps'] = 0
     job_info['failedReduces'] = 0
     sql_table = "job_summary"
@@ -139,8 +141,16 @@ def save_job_conf_file(hdfs_client, conn, log_fullpath, f):
         LOGGER.info(sql_insert)
         sql.execute(conn, sql_insert)
 
-def save_job_conf():
-    pass
+def save_job_conf(conn, propertys):
+    sql_table = "job_conf"
+    keys, values = "", ""
+    items = propertys.items()
+    keys = ", ".join(map(lambda item: "'%s'" % item[0], items))
+    values = ", ".join(map(lambda item: "'%s'" % item[1], items))
+    sql_insert =  ("INSERT INTO %s(%s) VALUES (%s)") % (sql_table, keys, values)
+    LOGGER.info(sql_insert)
+    sql.execute(conn, sql_insert)
+
 
 def process_log(hdfs_client, config, conn):
     '''process log and save useful information in dbbase'''
@@ -190,11 +200,15 @@ def monitor(hdfs_client, config, conn):
                     info['status'] = STATUS_RUNNING
                     info['user'] = user
                     save_job_summary(conn, info)
+                    if job_conf:
+                        LOGGER.info(job_conf)
+                        job_conf['job_id'] = jobid
+                        save_job_conf(conn, job_conf)
                 elif extension == ".xml":
                     if f == "job.xml":
                         pass
                     elif jobid in f:
-                        save_job_conf_file(hdfs_client, conn, fullpath, f)
+                        save_job_conf_file(hdfs_client, conn, running_job_path, f)
                 else:
                     pass
 
@@ -216,10 +230,14 @@ def process(config_path):
         os.remove(db_path)
     conn = sql.get_conn(db_path)
     process_log(hdfs_client, config, conn)
-    
     from seplunk import DEBUG
     if DEBUG:
         monitor(hdfs_client, config, conn)
+    count = 1
     while False if DEBUG else True :
+        if count%8 == 0:
+            count = 1
+            process_log(hdfs_client, config, conn)
         monitor(hdfs_client, config, conn)
         time.sleep(50)
+        count += 1
