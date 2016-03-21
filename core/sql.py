@@ -104,7 +104,7 @@ def fetchall(conn, sql):
             LOGGER.info('执行sql:[{}]'.format(sql))
         cu.execute(sql)
         r = cu.fetchall()
-        if len(r) > 0:
+        if r is not None and len(r) > 0:
             return r
         else:
             LOGGER.info('the result equal None!')
@@ -120,7 +120,7 @@ def fetchone(conn, sql):
             LOGGER.info('执行sql:[{}]'.format(sql))
         cu.execute(sql)
         r = cu.fetchone()
-        if len(r) > 0:
+        if r is not None and  len(r) > 0:
             return r
         else:
             LOGGER.info('the result equal None!')

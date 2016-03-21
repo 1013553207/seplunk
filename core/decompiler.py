@@ -10,6 +10,8 @@ import shutil
 import random
 import subprocess
 
+from core.logger import get_log
+from core.configure import get_extension 
 
 JAVA = "java -jar"
 DECOMPILER = "/opt/procyon-decompiler-0.5.30.jar"
