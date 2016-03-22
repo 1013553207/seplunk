@@ -27,7 +27,7 @@ CREATE_JOB_CONF = False
 
 STAGE = ".staging"
 USER_TABLE = 'user'
-HEALTH_POINT = 8
+HEALTH_POINT = 4
 STATUS_RUNNING = "RUNNING"
 
 def save_user(conn, username, forbid=0):
@@ -211,6 +211,38 @@ def monitor(hdfs_client, config, conn):
                         save_job_conf_file(hdfs_client, conn, running_job_path, f)
                 else:
                     pass
+       admin_action(conn, user, jobid)
+
+def admin_action(conn, user, jobid):
+    select_sql = "select job_id, job_checksum, status from job_summary where user = '%s' and job_id !='%s' " % (user, job_id)
+    results = conn.fetchall(conn, select_sql)
+    if not results:
+        LOGGER.info("the user: %s have not any task" % user)
+        return
+    select_sql = "select job_checksum from job_summary where user = '%s' and job_id = '%s'" % (user, job_id)
+    checksum = conn.fetchall(conn, select_sql)
+    select_sql = "select * from job_conf where job_id = '%s'" % job_id
+    conf = set(conn.fetchone(conn, select_sql))
+    count  = 0
+    for job_id, job_checksum, job_status in results:
+        if checksum == job_checksum:
+            select_sql = "select * from job_conf where job_id = '%s'" % job_id
+            job_conf = set(conn.fetchall(conn, select_sql))
+            if conf == job_conf and job_status == 'FAILED':
+                count += 1
+                if count == HEALTH_POINT:
+                    kill_job(jobid)
+
+
+def kill_job(jobid):
+    cmdline = "hadoop job -kill %s" % jobid
+    child = subprocess.Popen(cmdline, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+    content = ""
+    for line in child.stdout.readlines():
+        content += line
+    for line in child.stdout.readlines():
+        content += line
+    LOGGER.info(content)
 
 
 def process(config_path):

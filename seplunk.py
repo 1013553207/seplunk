@@ -52,7 +52,7 @@ def main():
 	except :
 		print useage
 		sys.exit(2)
-  
+
 
 	config_path = None
 	for o, a in opts:
