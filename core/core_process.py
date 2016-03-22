@@ -5,6 +5,7 @@ import os
 import sys
 import time
 import json
+import subprocess
 from multiprocessing import Process, Pipe
 from xml.etree import ElementTree as ET
 
@@ -28,7 +29,7 @@ CREATE_JOB_CONF = False
 
 STAGE = ".staging"
 USER_TABLE = 'user'
-HEALTH_POINT = 4
+HEALTH_POINT = 2
 STATUS_RUNNING = "RUNNING"
 
 def save_user(conn, username, forbid=0):
@@ -124,9 +125,7 @@ def save_job_summary(conn, job_info):
 def save_job_conf_file(hdfs_client, conn, log_fullpath, f, jobid):
     global CREATE_JOB_CONF
     conf_file = os.path.join(log_fullpath, f)
-    print conf_file, jobid
     propertys = get_property(hdfs_client.open(conf_file))
-    # print propertys
     propertys["job_id"] = jobid
     sql_table = "job_conf"
     if not CREATE_JOB_CONF:
@@ -198,7 +197,6 @@ def monitor_am(hdfs_client, config, conn):
     '''monitor and process running mapreducess task'''
     global STAGE, STATUS_RUNNING
     am_fullpath = config.get("yarn.app.mapreduce.am.staging-dir", None)
-    # print am_fullpath
     LOGGER.info(am_fullpath)
     if not am_fullpath or not hdfs_client.exists(am_fullpath):
         LOGGER.error("intermediate-done-dir path not exists")
@@ -235,8 +233,12 @@ def monitor_am(hdfs_client, config, conn):
                     if f == "job.xml":
                         pass
                     elif jobid in f:
-                        save_job_conf_file(hdfs_client, conn, running_job_path, f, jobid)
-                        flag += 1
+                        try:
+                            save_job_conf_file(hdfs_client, conn, running_job_path, f, jobid)
+                        except Exception, e:
+                            LOGGER.info(str(e))
+                        finally:
+                            flag += 1
                     else:
                         pass
                 else:
@@ -251,24 +253,25 @@ def admin_action(conn, user, job_id):
         LOGGER.info("the user: %s have not any task" % user)
         return
     select_sql = "select job_checksum from job_summary where user = '%s' and job_id = '%s'" % (user, job_id)
-    checksum = sql.fetchall(conn, select_sql)[0][0]
+    checksum = sql.fetchone(conn, select_sql)[0]
     select_sql = "select * from job_conf where job_id = '%s'" % job_id
     conf = sql.fetchone(conn, select_sql)
     count  = 0
     for jobid, job_checksum, job_status in results:
+        # print jobid, job_checksum, job_status, checksum
         if checksum == job_checksum and job_id != jobid:
             select_sql = "select * from job_conf where job_id = '%s'" % jobid
             job_conf = sql.fetchone(conn, select_sql)
-            # print conf, job_conf
-            if conf == job_conf and 'FAILED' in job_status:
+            if 'FAILED' in job_status:
                 count += 1
-                # print count
                 if count == HEALTH_POINT:
-                    kill_job(jobid)
+                    kill_job(job_id)
 
 
-def kill_job(jobid):
-    cmdline = "hadoop job -kill %s" % jobid
+def kill_job(job_id):
+    cmdline = "/home/hadoop/hadoop-2.6.2/bin/mapred job -kill %s" % job_id
+    print cmdline
+    LOGGER.info('exec'+cmdline)
     child = subprocess.Popen(cmdline, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
     content = ""
     for line in child.stdout.readlines():
@@ -291,6 +294,8 @@ def seplunk_start(config_path):
     if not os.path.exists(TMP_PATH):
         os.mkdir(TMP_PATH)
     db_path = os.path.join(TMP_PATH, DB_FLIE)
+    # if os.path.exists(db_path):
+    #    os.remove(db_path)
     conn = sql.get_conn(db_path)
 
     p_log_conn, p_monitor_conn = Pipe()
@@ -301,8 +306,11 @@ def seplunk_start(config_path):
     p_monitor = Process(target=create_process_monitor,
         args=(hdfs_client, config, conn, p_monitor_conn))
     p_monitor.start()
+    #create_process_monitor(hdfs_client, config, conn, p_monitor_conn)
 
 def create_process_log(hdfs_client, config, conn, pipe):
+    LOGGER.info("start  log process")
+    print "start  log process"
     from seplunk import DEBUG
     first = True
     while False if DEBUG else True:
@@ -310,14 +318,16 @@ def create_process_log(hdfs_client, config, conn, pipe):
         if first:
             pipe.send(["start monitor"])
             first = False
-        time.sleep(20)
+        time.sleep(30)
 
 def create_process_monitor(hdfs_client, config, conn, pipe):
+    LOGGER.info("start monitor process")
     from seplunk import DEBUG
     first = True
     while False if DEBUG else True:
         if first:
             pipe.recv()
+            print "start monitor process"
             first = False
         monitor_am(hdfs_client, config, conn)
-        time.sleep(5)
+        time.sleep(8)
