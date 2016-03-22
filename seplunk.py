@@ -22,9 +22,9 @@ def set_daemon():
         sys.exit(1)
 
     # decouple from parent environment
-    os.chdir("/")
+    # os.chdir("/")
     os.setsid()
-    os.umask(0)
+    # os.umask(0)
 
     # do second fork
     try:
@@ -64,8 +64,8 @@ def main():
 		else:
 			print useage
 			sys.exit(1)
-	# if not DEBUG:
-	    # set_daemon()
+	if not DEBUG:
+	    set_daemon()
 	seplunk_start(config_path)
 
 if __name__ == '__main__':
