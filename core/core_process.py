@@ -32,7 +32,7 @@ STATUS_RUNNING = "RUNNING"
 
 def save_user(conn, username, forbid=0):
     global CREATE_USER, USER_TABLE
-    create_sql = ''' CREATE TABLE '%s'(
+    create_sql = ''' CREATE TABLE IF NOT EXISTS '%s'(
                 'uid' INTEGER PRIMARY KEY AUTOINCREMENT,
                 'username' VARCHAR(255) NOT NULL UNIQUE,
                 'forbid' TINYINT(8) NOT NULL DEFAULT 0,
@@ -40,14 +40,14 @@ def save_user(conn, username, forbid=0):
     if not CREATE_USER:
         sql.create_table(conn, create_sql)
         CREATE_USER = True
-    select_sql = "SELECT * FROM '%s' WHERE '%s'= '%s' " % (USER_TABLE, "username", username)
+    select_sql = "SELECT * FROM %s WHERE %s = '%s' " % (USER_TABLE, "username", username)
     LOGGER.info(select_sql)
     result = sql.fetchone(conn, select_sql)
     if result:
-        update_sql = "UPDATE '%s' SET 'forbid' = '%s' WHERE 'username'= '%s'"  % (USER_TABLE, forbid, username)
+        update_sql = "UPDATE %s SET forbid = '%s' WHERE username = '%s'"  % (USER_TABLE, forbid, username)
         sql.execute(conn, update_sql)
     else:
-        insert_sql = "INSERT INTO '%s'('%s', '%s') values('%s', '%s')" % (USER_TABLE, 'username', 'forbid', username, forbid)
+        insert_sql = "INSERT INTO '%s'(%s, %s) values('%s', '%s')" % (USER_TABLE, 'username', 'forbid', username, forbid)
         LOGGER.info(insert_sql)
         sql.execute(conn, insert_sql)
 
@@ -62,12 +62,11 @@ def save_job_summary_file(hdfs_client, conn, log_fullpath, f):
     job_info = dict((pair.split("=")) for pair in lines.split(","))
     job_info['job_id'] = jobid
     job_info['job_checksum'] = 0
-    job_info['status'] = STATUS_RUNNING
     job_info['failedMaps'] = 0
     job_info['failedReduces'] = 0
     sql_table = "job_summary"
     if not CREATE_JOB_SUMMARY:
-        create_sql = '''CREATE TABLE '%s' (''' % sql_table
+        create_sql = '''CREATE TABLE IF NOT EXISTS '%s' (''' % sql_table
         for key in job_info.keys():
             if 'jobId' not in key:
                 create_sql += "'%s' varchar(255)," % str(key)
@@ -78,12 +77,12 @@ def save_job_summary_file(hdfs_client, conn, log_fullpath, f):
         sql.create_table(conn, create_sql)
         CREATE_JOB_SUMMARY = True
 
-    select_sql = "SELECT * FROM '%s' WHERE 'job_id' = '%s'" % (sql_table, jobid)
+    select_sql = "SELECT * FROM %s WHERE job_id = '%s'" % (sql_table, jobid)
     LOGGER.info(select_sql)
     result = sql.fetchone(conn, select_sql)
     if result:
-        update = ", ".join([ "'%s'='%s'" % (key, job_info[key]) for key in job_info.keys() if 'jobId' not in key])
-        update_sql = "UPDATE '%s' SET %s WHERE 'job_id' = '%s' " % (sql_table, update, jobid)
+        update = ", ".join([ "%s='%s'" % (key, job_info[key]) for key in job_info.keys() if 'jobId' not in key])
+        update_sql = "UPDATE %s SET %s WHERE job_id = '%s' " % (sql_table, update, jobid)
         LOGGER.info(update_sql)
         sql.execute(conn, update_sql)
     else:
@@ -91,7 +90,7 @@ def save_job_summary_file(hdfs_client, conn, log_fullpath, f):
         items = job_info.items()
         # keys = ", ".join(map(lambda item: "'%s'" % item[0], items))
         # values = ", ".join(map(lambda item: "'%s'" % item[1], items))
-        keys = ", ".join(["'%s'" % key for key in job_info.keys() if 'jobId' not in key])
+        keys = ", ".join(["%s" % key for key in job_info.keys() if 'jobId' not in key])
         values = ", ".join(["'%s'" % job_info[key] for key in job_info.keys() if 'jobId' not in key])
         sql_insert =  ("INSERT INTO %s(%s) VALUES (%s)") % (sql_table, keys, values)
         LOGGER.info(sql_insert)
@@ -100,13 +99,25 @@ def save_job_summary_file(hdfs_client, conn, log_fullpath, f):
 
 def save_job_summary(conn, job_info):
     sql_table = "job_summary"
-    keys, values = "", ""
-    items = job_info.items()
-    keys = ", ".join(map(lambda item: "'%s'" % item[0], items))
-    values = ", ".join(map(lambda item: "'%s'" % item[1], items))
-    sql_insert =  ("INSERT INTO %s(%s) VALUES (%s)") % (sql_table, keys, values)
-    LOGGER.info(sql_insert)
-    sql.execute(conn, sql_insert)
+    jobid = job_info['job_id']
+    select_sql = "SELECT * FROM %s WHERE job_id = '%s'" % (sql_table, jobid)
+    LOGGER.info(select_sql)
+    result = sql.fetchone(conn, select_sql)
+    if result:
+        update = ", ".join([ "%s='%s'" % (key, job_info[key]) for key in job_info.keys() if 'jobId' not in key])
+        update_sql = "UPDATE %s SET %s WHERE job_id = '%s' " % (sql_table, update, jobid)
+        LOGGER.info(update_sql)
+        sql.execute(conn, update_sql)
+    else:
+        keys, values = "", ""
+        items = job_info.items()
+        # keys = ", ".join(map(lambda item: "'%s'" % item[0], items))
+        # values = ", ".join(map(lambda item: "'%s'" % item[1], items))
+        keys = ", ".join(["%s" % key for key in job_info.keys() if 'jobId' not in key])
+        values = ", ".join(["'%s'" % job_info[key] for key in job_info.keys() if 'jobId' not in key])
+        sql_insert =  ("INSERT INTO %s(%s) VALUES (%s)") % (sql_table, keys, values)
+        LOGGER.info(sql_insert)
+        sql.execute(conn, sql_insert)
 
 
 def save_job_conf_file(hdfs_client, conn, log_fullpath, f):
@@ -117,19 +128,19 @@ def save_job_conf_file(hdfs_client, conn, log_fullpath, f):
     propertys["job_id"] = jobid
     sql_table = "job_conf"
     if not CREATE_JOB_CONF:
-        create_sql = "CREATE TABLE '%s' (" % sql_table
+        create_sql = "CREATE TABLE IF NOT EXISTS '%s' (" % sql_table
         for key in propertys.keys():
                 create_sql += "'%s' varchar(255)," % key
         create_sql += "CONSTRAINT job_confId PRIMARY KEY ('job_id'))"
         LOGGER.info(create_sql)
         sql.create_table(conn, create_sql)
         CREATE_JOB_CONF = True
-    select_sql = "SELECT * FROM '%s' WHERE 'job_id' = '%s'" % (sql_table, jobid)
+    select_sql = "SELECT * FROM %s WHERE job_id = '%s'" % (sql_table, jobid)
     LOGGER.info(select_sql)
     result = sql.fetchone(conn, select_sql)
     if result:
         update = ", ".join([ "'%s'='%s'" % (key, propertys[key]) for key in propertys.keys() if key != 'jobId'])
-        update_sql = "UPDATE '%s' SET %s WHERE 'job_id' = '%s' " % (sql_table, update, jobid)
+        update_sql = "UPDATE %s SET %s WHERE job_id = '%s' " % (sql_table, update, jobid)
         LOGGER.info(update_sql)
         sql.execute(conn, update_sql)
     else:
@@ -143,14 +154,24 @@ def save_job_conf_file(hdfs_client, conn, log_fullpath, f):
 
 def save_job_conf(conn, propertys):
     sql_table = "job_conf"
-    keys, values = "", ""
-    items = propertys.items()
-    keys = ", ".join(map(lambda item: "'%s'" % item[0], items))
-    values = ", ".join(map(lambda item: "'%s'" % item[1], items))
-    sql_insert =  ("INSERT INTO %s(%s) VALUES (%s)") % (sql_table, keys, values)
-    LOGGER.info(sql_insert)
-    sql.execute(conn, sql_insert)
-
+    jobid = propertys['job_id']
+    select_sql = "SELECT * FROM %s WHERE job_id = '%s'" % (sql_table, jobid)
+    LOGGER.info(select_sql)
+    result = sql.fetchone(conn, select_sql)
+    if result:
+        update = ", ".join([ "'%s'='%s'" % (key, propertys[key]) for key in propertys.keys()])
+        update_sql = "UPDATE %s SET %s WHERE job_id = '%s' " % (sql_table, update, jobid)
+        LOGGER.info(update_sql)
+        sql.execute(conn, update_sql)
+    else:
+        keys, values = "", ""
+        items = propertys.items()
+        keys = ", ".join(map(lambda item: "'%s'" % item[0], items))
+        values = ", ".join(map(lambda item: "'%s'" % item[1], items))
+        sql_insert =  ("INSERT INTO %s(%s) VALUES (%s)") % (sql_table, keys, values)
+        LOGGER.info(sql_insert)
+        sql.execute(conn, sql_insert)
+    
 
 def process_log(hdfs_client, config, conn):
     '''process log and save useful information in dbbase'''
@@ -174,18 +195,20 @@ def monitor(hdfs_client, config, conn):
     '''monitor and process running mapreducess task'''
     global STAGE, STATUS_RUNNING
     am_fullpath = config.get("yarn.app.mapreduce.am.staging-dir", None)
-    print am_fullpath
+    # print am_fullpath
     LOGGER.info(am_fullpath)
     if not am_fullpath or not hdfs_client.exists(am_fullpath):
         LOGGER.error("intermediate-done-dir path not exists")
         sys.exit(1)
     users = hdfs_client.listdir(am_fullpath)
     for user in users:
+        save_user(conn, user)
         am_fullpath = os.path.join(am_fullpath, user)
         staging_path = os.path.join(am_fullpath, STAGE)
         if not hdfs_client.exists(staging_path):
             LOGGER.info(staging_path+"not exists")
         for jobid in hdfs_client.listdir(staging_path):
+            flag = 0
             LOGGER.info("user: %s jobid: %s  is running" % (user, jobid))
             running_job_path = os.path.join(staging_path, jobid)
             for f in hdfs_client.listdir(running_job_path):
@@ -200,6 +223,7 @@ def monitor(hdfs_client, config, conn):
                     info['status'] = STATUS_RUNNING
                     info['user'] = user
                     save_job_summary(conn, info)
+                    flag += 1
                     if job_conf:
                         LOGGER.info(job_conf)
                         job_conf['job_id'] = jobid
@@ -209,27 +233,34 @@ def monitor(hdfs_client, config, conn):
                         pass
                     elif jobid in f:
                         save_job_conf_file(hdfs_client, conn, running_job_path, f)
+                        flag += 1
+                    else:
+                        pass
                 else:
                     pass
-       admin_action(conn, user, jobid)
+            if flag == 2:
+                admin_action(conn, user, jobid)
 
-def admin_action(conn, user, jobid):
-    select_sql = "select job_id, job_checksum, status from job_summary where user = '%s' and job_id !='%s' " % (user, job_id)
-    results = conn.fetchall(conn, select_sql)
+def admin_action(conn, user, job_id):
+    select_sql = "select job_id, job_checksum, status from job_summary where user = '%s'" % (user)
+    results = sql.fetchall(conn, select_sql)
     if not results:
         LOGGER.info("the user: %s have not any task" % user)
         return
     select_sql = "select job_checksum from job_summary where user = '%s' and job_id = '%s'" % (user, job_id)
-    checksum = conn.fetchall(conn, select_sql)
+    checksum = sql.fetchall(conn, select_sql)[0][0]
     select_sql = "select * from job_conf where job_id = '%s'" % job_id
-    conf = set(conn.fetchone(conn, select_sql))
+    conf = sql.fetchone(conn, select_sql)[0]
     count  = 0
-    for job_id, job_checksum, job_status in results:
-        if checksum == job_checksum:
-            select_sql = "select * from job_conf where job_id = '%s'" % job_id
-            job_conf = set(conn.fetchall(conn, select_sql))
-            if conf == job_conf and job_status == 'FAILED':
+    for jobid, job_checksum, job_status in results:
+        print jobid, job_checksum, job_status
+        if checksum == job_checksum and job_id != jobid:
+            select_sql = "select * from job_conf where job_id = '%s'" % jobid
+            job_conf = sql.fetchall(conn, select_sql)[0]
+            print job_conf
+            if conf == job_conf and 'FAILED' in job_status:
                 count += 1
+                print count
                 if count == HEALTH_POINT:
                     kill_job(jobid)
 
@@ -258,8 +289,8 @@ def process(config_path):
     if not os.path.exists(TMP_PATH):
         os.mkdir(TMP_PATH)
     db_path = os.path.join(TMP_PATH, DB_FLIE)
-    if os.path.exists(db_path):
-        os.remove(db_path)
+    # if os.path.exists(db_path):
+        # os.remove(db_path)
     conn = sql.get_conn(db_path)
     process_log(hdfs_client, config, conn)
     from seplunk import DEBUG
@@ -267,9 +298,9 @@ def process(config_path):
         monitor(hdfs_client, config, conn)
     count = 1
     while False if DEBUG else True :
-        if count%8 == 0:
+        if count%10 == 0:
             count = 1
             process_log(hdfs_client, config, conn)
         monitor(hdfs_client, config, conn)
-        time.sleep(50)
+        time.sleep(5)
         count += 1

@@ -7,7 +7,7 @@ import getopt
 
 from core.core_process import process
 
-DEBUG = True
+DEBUG = False
 
 def set_daemon():
 	# do the UNIX double-fork magic, see Stevens' "Advanced
@@ -64,8 +64,8 @@ def main():
 		else:
 			print useage
 			sys.exit(1)
-	if not DEBUG:
-	    set_daemon()
+	# if not DEBUG:
+	    # set_daemon()
 	process(config_path)
 
 if __name__ == '__main__':

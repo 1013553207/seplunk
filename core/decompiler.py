@@ -16,16 +16,18 @@ from core.configure import get_extension
 JAVA = "java -jar"
 DECOMPILER = "/opt/procyon-decompiler-0.5.30.jar"
 MD5 = "/usr/bin/md5sum"
+TMP_PATH = "/tmp/hadoop/"
 
 LOGER = get_log(__file__)
 
 
 def process_jar(jar_file):
+    global TMP_PATH
     md5 = get_md5(jar_file)
     if not os.path.exists(jar_file):
         LOGER.error("source file not exits")
         return md5, None
-    tmp = os.path.join(os.getcwd(), "java_decompiler"+str(uuid.uuid1()))
+    tmp = os.path.join(TMP_PATH, "java_decompiler"+str(uuid.uuid1()))
     os.mkdir(tmp)
     cmdline = "%s %s -jar %s -o %s >/dev/null 2>&- 1>&-" % (JAVA, DECOMPILER, jar_file, tmp)
     LOGER.info("exec:" + cmdline)
