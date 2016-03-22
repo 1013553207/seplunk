@@ -5,7 +5,7 @@ import os
 import sys
 import getopt
 
-from core.core_process import process
+from core.core_process import seplunk_start 
 
 DEBUG = False
 
@@ -66,7 +66,7 @@ def main():
 			sys.exit(1)
 	# if not DEBUG:
 	    # set_daemon()
-	process(config_path)
+	seplunk_start(config_path)
 
 if __name__ == '__main__':
 	main()

@@ -5,6 +5,7 @@ import os
 import sys
 import time
 import json
+from multiprocessing import Process, Pipe
 from xml.etree import ElementTree as ET
 
 import pyhdfs
@@ -61,11 +62,11 @@ def save_job_summary_file(hdfs_client, conn, log_fullpath, f):
         lines += line
     job_info = dict((pair.split("=")) for pair in lines.split(","))
     job_info['job_id'] = jobid
-    job_info['job_checksum'] = 0
-    job_info['failedMaps'] = 0
-    job_info['failedReduces'] = 0
     sql_table = "job_summary"
     if not CREATE_JOB_SUMMARY:
+        job_info['job_checksum'] = 0
+        job_info['failedMaps'] = 0
+        job_info['failedReduces'] = 0
         create_sql = '''CREATE TABLE IF NOT EXISTS '%s' (''' % sql_table
         for key in job_info.keys():
             if 'jobId' not in key:
@@ -120,11 +121,12 @@ def save_job_summary(conn, job_info):
         sql.execute(conn, sql_insert)
 
 
-def save_job_conf_file(hdfs_client, conn, log_fullpath, f):
+def save_job_conf_file(hdfs_client, conn, log_fullpath, f, jobid):
     global CREATE_JOB_CONF
-    jobid = f[:len(f)-9]
     conf_file = os.path.join(log_fullpath, f)
+    print conf_file, jobid
     propertys = get_property(hdfs_client.open(conf_file))
+    # print propertys
     propertys["job_id"] = jobid
     sql_table = "job_conf"
     if not CREATE_JOB_CONF:
@@ -171,9 +173,9 @@ def save_job_conf(conn, propertys):
         sql_insert =  ("INSERT INTO %s(%s) VALUES (%s)") % (sql_table, keys, values)
         LOGGER.info(sql_insert)
         sql.execute(conn, sql_insert)
-    
 
-def process_log(hdfs_client, config, conn):
+
+def parse_log(hdfs_client, config, conn):
     '''process log and save useful information in dbbase'''
     log_fullpath = config.get("mapreduce.jobhistory.intermediate-done-dir", None)
     if not log_fullpath or hdfs_client.exists(log_fullpath):
@@ -186,12 +188,13 @@ def process_log(hdfs_client, config, conn):
             if get_extension(f) == ".summary":
                 save_job_summary_file(hdfs_client, conn, log_fullpath, f)
             elif get_extension(f) == ".xml":
-                save_job_conf_file(hdfs_client, conn, log_fullpath, f)
+                jobid = f[:len(f)-9]
+                save_job_conf_file(hdfs_client, conn, log_fullpath, f, jobid)
             else:
                 pass
 
 
-def monitor(hdfs_client, config, conn):
+def monitor_am(hdfs_client, config, conn):
     '''monitor and process running mapreducess task'''
     global STAGE, STATUS_RUNNING
     am_fullpath = config.get("yarn.app.mapreduce.am.staging-dir", None)
@@ -232,7 +235,7 @@ def monitor(hdfs_client, config, conn):
                     if f == "job.xml":
                         pass
                     elif jobid in f:
-                        save_job_conf_file(hdfs_client, conn, running_job_path, f)
+                        save_job_conf_file(hdfs_client, conn, running_job_path, f, jobid)
                         flag += 1
                     else:
                         pass
@@ -250,17 +253,16 @@ def admin_action(conn, user, job_id):
     select_sql = "select job_checksum from job_summary where user = '%s' and job_id = '%s'" % (user, job_id)
     checksum = sql.fetchall(conn, select_sql)[0][0]
     select_sql = "select * from job_conf where job_id = '%s'" % job_id
-    conf = sql.fetchone(conn, select_sql)[0]
+    conf = sql.fetchone(conn, select_sql)
     count  = 0
     for jobid, job_checksum, job_status in results:
-        print jobid, job_checksum, job_status
         if checksum == job_checksum and job_id != jobid:
             select_sql = "select * from job_conf where job_id = '%s'" % jobid
-            job_conf = sql.fetchall(conn, select_sql)[0]
-            print job_conf
+            job_conf = sql.fetchone(conn, select_sql)
+            # print conf, job_conf
             if conf == job_conf and 'FAILED' in job_status:
                 count += 1
-                print count
+                # print count
                 if count == HEALTH_POINT:
                     kill_job(jobid)
 
@@ -276,7 +278,7 @@ def kill_job(jobid):
     LOGGER.info(content)
 
 
-def process(config_path):
+def seplunk_start(config_path):
     if not os.path.exists(config_path):
         LOGGER.error("config file path not exists")
         sys.exit(1)
@@ -289,18 +291,33 @@ def process(config_path):
     if not os.path.exists(TMP_PATH):
         os.mkdir(TMP_PATH)
     db_path = os.path.join(TMP_PATH, DB_FLIE)
-    # if os.path.exists(db_path):
-        # os.remove(db_path)
     conn = sql.get_conn(db_path)
-    process_log(hdfs_client, config, conn)
+
+    p_log_conn, p_monitor_conn = Pipe()
+    p_log = Process(target=create_process_log,
+            args=(hdfs_client, config, conn, p_log_conn))
+    p_log.start()
+
+    p_monitor = Process(target=create_process_monitor,
+        args=(hdfs_client, config, conn, p_monitor_conn))
+    p_monitor.start()
+
+def create_process_log(hdfs_client, config, conn, pipe):
     from seplunk import DEBUG
-    if DEBUG:
-        monitor(hdfs_client, config, conn)
-    count = 1
-    while False if DEBUG else True :
-        if count%10 == 0:
-            count = 1
-            process_log(hdfs_client, config, conn)
-        monitor(hdfs_client, config, conn)
+    first = True
+    while False if DEBUG else True:
+        parse_log(hdfs_client, config, conn)
+        if first:
+            pipe.send(["start monitor"])
+            first = False
+        time.sleep(20)
+
+def create_process_monitor(hdfs_client, config, conn, pipe):
+    from seplunk import DEBUG
+    first = True
+    while False if DEBUG else True:
+        if first:
+            pipe.recv()
+            first = False
+        monitor_am(hdfs_client, config, conn)
         time.sleep(5)
-        count += 1
