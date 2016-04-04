@@ -11,11 +11,11 @@ import random
 import subprocess
 
 from core.logger import get_log
-from core.configure import get_extension 
+from core.configure import get_extension
 
 JAVA = "java -jar"
-DECOMPILER = "/opt/procyon-decompiler-0.5.30.jar"
-MD5 = "/usr/bin/md5sum"
+DECOMPILER = "./libs/procyon-decompiler-0.5.30.jar"
+MD5 = "md5sum"
 TMP_PATH = "/tmp/hadoop/"
 
 LOGER = get_log(__file__)

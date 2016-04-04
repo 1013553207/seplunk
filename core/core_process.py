@@ -247,6 +247,12 @@ def monitor_am(hdfs_client, config, conn):
                 admin_action(conn, user, jobid)
 
 def admin_action(conn, user, job_id):
+    global USER_TABLE
+    select_sql = "select forbid from %s where username='%s'" % (USER_TABLE, user)
+    forbid = int(sql.fetchone(conn, select_sql)[0])
+    if forbid == 1:
+        kill_job(jobid)
+        return
     select_sql = "select job_id, job_checksum, status from job_summary where user = '%s'" % (user)
     results = sql.fetchall(conn, select_sql)
     if not results:
@@ -265,11 +271,13 @@ def admin_action(conn, user, job_id):
             if 'FAILED' in job_status:
                 count += 1
                 if count == HEALTH_POINT:
+                    update_sql = "UPDATE %s SET forbid=1 where username='%s'" % (USER_TABLE, user)
+                    sql.execute(update_sql)
                     kill_job(job_id)
 
 
 def kill_job(job_id):
-    cmdline = "/home/hadoop/hadoop-2.6.2/bin/mapred job -kill %s" % job_id
+    cmdline = "mapred job -kill %s" % job_id
     print cmdline
     LOGGER.info('exec'+cmdline)
     child = subprocess.Popen(cmdline, stdin=None, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)

@@ -5,7 +5,7 @@ import os
 import sys
 import getopt
 
-from core.core_process import seplunk_start 
+from core.core_process import seplunk_start
 
 DEBUG = False
 
