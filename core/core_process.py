@@ -32,7 +32,7 @@ USER_TABLE = 'user'
 HEALTH_POINT = 4
 STATUS_RUNNING = "RUNNING"
 
-def save_user(conn, username, forbid=0):
+def save_user(conn, username, forbid):
     global CREATE_USER, USER_TABLE
     create_sql = ''' CREATE TABLE IF NOT EXISTS '%s'(
                 'uid' INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -45,10 +45,10 @@ def save_user(conn, username, forbid=0):
     select_sql = "SELECT * FROM %s WHERE %s = '%s' " % (USER_TABLE, "username", username)
     LOGGER.info(select_sql)
     result = sql.fetchone(conn, select_sql)
-    if result:
+    if result and forbid == 1:
         update_sql = "UPDATE %s SET forbid = '%s' WHERE username = '%s'"  % (USER_TABLE, forbid, username)
         sql.execute(conn, update_sql)
-    else:
+    if not result:
         insert_sql = "INSERT INTO '%s'(%s, %s) values('%s', '%s')" % (USER_TABLE, 'username', 'forbid', username, forbid)
         LOGGER.info(insert_sql)
         sql.execute(conn, insert_sql)
@@ -181,7 +181,7 @@ def parse_log(hdfs_client, config, conn):
         LOGGER.error("intermediate-done-dir path not exists")
     users = hdfs_client.listdir(log_fullpath)
     for user in users:
-        save_user(conn, user)
+        save_user(conn, user, 0)
         log_fullpath = os.path.join(log_fullpath, user)
         for f in hdfs_client.listdir(log_fullpath):
             if get_extension(f) == ".summary":
@@ -203,7 +203,7 @@ def monitor_am(hdfs_client, config, conn):
         sys.exit(1)
     users = hdfs_client.listdir(am_fullpath)
     for user in users:
-        save_user(conn, user)
+        save_user(conn, user, 0)
         am_fullpath = os.path.join(am_fullpath, user)
         staging_path = os.path.join(am_fullpath, STAGE)
         if not hdfs_client.exists(staging_path):
@@ -250,8 +250,9 @@ def admin_action(conn, user, job_id):
     global USER_TABLE
     select_sql = "select forbid from %s where username='%s'" % (USER_TABLE, user)
     forbid = int(sql.fetchone(conn, select_sql)[0])
+    print forbid
     if forbid == 1:
-        kill_job(jobid)
+        kill_job(job_id)
         return
     select_sql = "select job_id, job_checksum, status from job_summary where user = '%s'" % (user)
     results = sql.fetchall(conn, select_sql)
@@ -271,8 +272,7 @@ def admin_action(conn, user, job_id):
             if 'FAILED' in job_status:
                 count += 1
                 if count == HEALTH_POINT:
-                    update_sql = "UPDATE %s SET forbid=1 where username='%s'" % (USER_TABLE, user)
-                    sql.execute(update_sql)
+                    save_user(conn, user, 1)
                     kill_job(job_id)
 
 

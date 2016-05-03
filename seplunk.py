@@ -64,8 +64,8 @@ def main():
 		else:
 			print useage
 			sys.exit(1)
-	if not DEBUG:
-	    set_daemon()
+	#if not DEBUG:
+    #    pass
 	seplunk_start(config_path)
 
 if __name__ == '__main__':
