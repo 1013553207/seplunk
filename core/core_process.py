@@ -29,7 +29,7 @@ CREATE_JOB_CONF = False
 
 STAGE = ".staging"
 USER_TABLE = 'user'
-HEALTH_POINT = 4
+HEALTH_POINT = 5
 STATUS_RUNNING = "RUNNING"
 
 def save_user(conn, username, forbid):
